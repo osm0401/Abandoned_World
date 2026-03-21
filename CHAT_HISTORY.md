@@ -42,3 +42,12 @@
 	2. 적 AI 추적 시간(chase_timer) 값을 난이도에 맞게 조정
 	3. 가시성 폴리곤 계산 성능 측정(FPS 확인) 후 최적화 필요 여부 결정
 	4. 필요하면 적의 시야를 플레이어 시야와 분리해 독립 시야 로직으로 개선
+git status -sb
+git remote -v
+git branch -vv
+git log --oneline --decorate --graph -n 10
+git fetch origin
+git log --oneline --left-right --graph main...origin/main -n 20
+git pull origin main --allow-unrelated-histories --no-rebase
+git status -sb
+git push -u origin main
