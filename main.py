@@ -248,3 +248,4 @@ while True:
     # 화면 렌더링
     mouse_pos = pygame.mouse.get_pos()
     screen.render_game_screen(screen_surface, visible_poly, BOXES, pos_x, pos_y, enemies, mouse_pos, font_small, SCREEN_WIDTH, SCREEN_HEIGHT, get_ray_screen_intersections)
+print("sus")
