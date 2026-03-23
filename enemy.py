@@ -73,19 +73,28 @@ def initialize_enemies(BOXES, SCREEN_WIDTH, SCREEN_HEIGHT):
     for enemy_key, enemy_data in ENEMY.items():
         enemy_radius = enemy_data["radius"]
         enemy_pos_x, enemy_pos_y = get_random_enemy_position(BOXES, enemy_radius, SCREEN_WIDTH, SCREEN_HEIGHT)
+        max_hp = int(enemy_data.get("max_hp", 100))
         enemies[enemy_key] = {
             "pos_x": enemy_pos_x,
             "pos_y": enemy_pos_y,
             "angle": random.uniform(0, 2 * math.pi),  # 무작위 초기 방향
             "data": enemy_data,  # ENEMY 데이터 참조
+            "hp": max_hp,
+            "max_hp": max_hp,
             "last_seen_player": None,  # 마지막으로 본 플레이어 위치 (x, y)
             "chase_timer": 0,  # 추적 유지 시간
         }
     return enemies
 
 
-def update_enemy_ai(enemies, pos_x, pos_y, visible_poly, BOXES, SCREEN_WIDTH, SCREEN_HEIGHT, point_in_polygon_func):
-    """모든 적의 AI와 이동을 업데이트"""
+def update_enemy_ai(enemies, pos_x, pos_y, visible_poly, BOXES, SCREEN_WIDTH, SCREEN_HEIGHT, point_in_polygon_func, box_rects=None):
+    """모든 적의 AI와 이동을 업데이트한다.
+
+    box_rects가 전달되면 매 프레임 Rect 생성을 피해서 성능을 개선한다.
+    """
+    if box_rects is None:
+        box_rects = [pygame.Rect(*box["rect"]) for box in BOXES]
+
     for enemy_key, enemy in enemies.items():
         enemy_data = enemy["data"]
         enemy_type = enemy_data["type"]
@@ -134,8 +143,7 @@ def update_enemy_ai(enemies, pos_x, pos_y, visible_poly, BOXES, SCREEN_WIDTH, SC
         new_enemy_x = enemy["pos_x"] + enemy_move_x
         new_enemy_y = enemy["pos_y"]
         can_enemy_move_x = True
-        for box in BOXES:
-            box_rect = pygame.Rect(*box["rect"])
+        for box_rect in box_rects:
             if circle_rect_collide(new_enemy_x, new_enemy_y, enemy_radius, box_rect):
                 can_enemy_move_x = False
                 break
@@ -146,8 +154,7 @@ def update_enemy_ai(enemies, pos_x, pos_y, visible_poly, BOXES, SCREEN_WIDTH, SC
         new_enemy_x = enemy["pos_x"]
         new_enemy_y = enemy["pos_y"] + enemy_move_y
         can_enemy_move_y = True
-        for box in BOXES:
-            box_rect = pygame.Rect(*box["rect"])
+        for box_rect in box_rects:
             if circle_rect_collide(new_enemy_x, new_enemy_y, enemy_radius, box_rect):
                 can_enemy_move_y = False
                 break

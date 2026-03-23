@@ -1,0 +1,79 @@
+{
+  "meta": {
+    "name": "my_map",
+    "created_at": "2026-03-23T22:40:34",
+    "width": 1000,
+    "height": 960,
+    "grid_size": 40
+  },
+  "player_spawn": {
+    "x": 40,
+    "y": 40
+  },
+  "boxes": [
+    {
+      "x": 160,
+      "y": 480,
+      "w": 680,
+      "h": 280,
+      "color": [
+        70,
+        150,
+        255
+      ],
+      "image": null
+    },
+    {
+      "x": 160,
+      "y": 320,
+      "w": 360,
+      "h": 320,
+      "color": [
+        70,
+        150,
+        255
+      ],
+      "image": null
+    },
+    {
+      "x": 640,
+      "y": 40,
+      "w": 160,
+      "h": 440,
+      "color": [
+        70,
+        150,
+        255
+      ],
+      "image": null
+    }
+  ],
+  "doors": [],
+  "enemies": [
+    {
+      "type": "chaser",
+      "x": 920,
+      "y": 520,
+      "radius": 12,
+      "speed": 2.0,
+      "hp": 100
+    },
+    {
+      "type": "random_walker",
+      "x": 720,
+      "y": 880,
+      "radius": 12,
+      "speed": 2.0,
+      "hp": 100
+    },
+    {
+      "type": "sniper",
+      "x": 840,
+      "y": 160,
+      "radius": 12,
+      "speed": 2.0,
+      "hp": 100
+    }
+  ],
+  "props": []
+}

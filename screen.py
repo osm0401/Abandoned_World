@@ -6,7 +6,7 @@ import math
 
 # 이미지 캐시 (성능 최적화)
 _image_cache = {}
-
+always_see = False
 def load_image(image_path):
     """이미지를 로드하고 캐시 (중복 로드 방지)"""
     if image_path in _image_cache:
@@ -20,8 +20,7 @@ def load_image(image_path):
         print(f"이미지 로드 실패: {image_path}")
         return None
 
-
-def render_game_screen(screen, visible_poly, BOXES, pos_x, pos_y, enemies, mouse_pos, font_small, SCREEN_WIDTH, SCREEN_HEIGHT, get_ray_screen_intersections):
+def render_game_screen(screen, visible_poly, BOXES, pos_x, pos_y, enemies, bullets, mouse_pos, font_small, SCREEN_WIDTH, SCREEN_HEIGHT, get_ray_screen_intersections, ammo=0, magazine_size=0, reload_timer=0):
     """
     게임 화면을 렌더링하는 함수
 
@@ -44,9 +43,15 @@ def render_game_screen(screen, visible_poly, BOXES, pos_x, pos_y, enemies, mouse
     # 화면 초기화
     screen.fill(black)
 
-    # 가시성 폴리곤 그리기
-    if visible_poly:
-        pygame.draw.polygon(screen, white, visible_poly)
+    # 가시성 영역 그리기
+    # 자기교차 폴리곤에서 생기는 검은 삼각형 아티팩트를 피하기 위해
+    # 플레이어 중심 기준 삼각형 팬으로 채운다.
+    if visible_poly and len(visible_poly) >= 2:
+        origin = (int(pos_x), int(pos_y))
+        for i in range(len(visible_poly)):
+            p1 = visible_poly[i]
+            p2 = visible_poly[(i + 1) % len(visible_poly)]
+            pygame.draw.polygon(screen, white, [origin, p1, p2])
 
     # 모든 박스 그리기
     for box in BOXES:
@@ -88,23 +93,40 @@ def render_game_screen(screen, visible_poly, BOXES, pos_x, pos_y, enemies, mouse
         enemy_pos_x = enemy["pos_x"]
         enemy_pos_y = enemy["pos_y"]
         enemy_radius = enemy_data["radius"]
+        enemy_hp = enemy.get("hp", enemy_data.get("hp", 100))
+        enemy_max_hp = max(1, enemy.get("max_hp", enemy_data.get("max_hp", 100)))
+        hp_ratio = max(0.0, min(1.0, enemy_hp / enemy_max_hp))
 
-        # 적 그리기 (색상 또는 이미지)
-        if enemy_data.get("image"):
-            # 이미지 사용 (미구현)
-            pass
-        else:
+        # 시야 판정: always_see가 False면 가시 폴리곤 안일 때만 표시
+        can_see_enemy = always_see or (visible_poly and point_in_polygon((enemy_pos_x, enemy_pos_y), visible_poly))
+
+        if can_see_enemy:
             pygame.draw.circle(screen, enemy_data["color"], (int(enemy_pos_x), int(enemy_pos_y)), enemy_radius)
-
-        # 적이 가시 범위 안에 있으면 ! 표시
-        if visible_poly and point_in_polygon((enemy_pos_x, enemy_pos_y), visible_poly):
-            alert_text = font_small.render("!", True, black)  # 검은색 !
+            alert_text = font_small.render("!", True, black)
             text_rect = alert_text.get_rect(center=(int(enemy_pos_x), int(enemy_pos_y)))
             screen.blit(alert_text, text_rect)
 
+            # 적 바로 아래 체력바 (적이 보일 때만)
+            bar_width = max(24, enemy_radius * 2)
+            bar_height = 5
+            bar_x = int(enemy_pos_x - bar_width / 2)
+            bar_y = int(enemy_pos_y + enemy_radius + 6)
+            pygame.draw.rect(screen, (80, 20, 20), (bar_x, bar_y, bar_width, bar_height))
+            pygame.draw.rect(screen, (50, 220, 70), (bar_x, bar_y, int(bar_width * hp_ratio), bar_height))
+    # 총알 그리기
+    for bullet in bullets:
+        pygame.draw.circle(screen, bullet["color"], (int(bullet["x"]), int(bullet["y"])), bullet["radius"])
+
     # 마우스 위치 표시
-    mouse_text = font_small.render(f"Mouse: {mouse_pos[0]}, {mouse_pos[1]}", True, (104, 54, 55))
+    mouse_text = font_small.render(f"Mouse: {mouse_pos[0]}, {mouse_pos[1]}", True, (255, 0, 0))
     screen.blit(mouse_text, (10, 10))
+
+    # 탄약 / 재장전 표시
+    if reload_timer > 0:
+        ammo_text = font_small.render("RELOADING...", True, (255, 0, 0))
+    else:
+        ammo_text = font_small.render(f"AMMO  {ammo} / {magazine_size}", True, (255, 0, 0))
+    screen.blit(ammo_text, (10, 25))
 
     # 화면 업데이트
     pygame.display.update()

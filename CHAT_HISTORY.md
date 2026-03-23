@@ -42,7 +42,11 @@
 	2. 적 AI 추적 시간(chase_timer) 값을 난이도에 맞게 조정
 	3. 가시성 폴리곤 계산 성능 측정(FPS 확인) 후 최적화 필요 여부 결정
 	4. 필요하면 적의 시야를 플레이어 시야와 분리해 독립 시야 로직으로 개선
-git status -sb
+### 2026-03-23 screen.py 스냅샷
+- 적 렌더링: 시야 안 → 원+! 표시 / 시야 밖 → 원만 표시(사용자가 else 추가)
+- 플레이어→마우스 방향 반직선 포함
+- 이미지 캐시 로드, 박스 이미지/색상 혼합 렌더링
+- point_in_polygon 함수로 가시성 판정git status -sb
 git remote -v
 git branch -vv
 git log --oneline --decorate --graph -n 10

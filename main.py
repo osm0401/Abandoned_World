@@ -1,15 +1,23 @@
 import pygame
 import sys
 import math
+import json
+import os
 import importlib
 import random
 import objects
 import enemy
 import screen
+import gun
 from objects import get_all_boxes_config
-from enemy import ENEMY, initialize_enemies, update_enemy_ai
+from enemy import initialize_enemies, update_enemy_ai
+from gun import GUNS, CURRENT_GUN, make_bullets
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 960
+MAP_FILE = "my_map.json"
+PLAYER_RADIUS = 20
+PLAYER_SPEED = 3
+TARGET_FPS = 60
 
 boxes_config = get_all_boxes_config(SCREEN_WIDTH, SCREEN_HEIGHT)
 BOXES = boxes_config  # 모든 박스 설정 리스트
@@ -26,10 +34,7 @@ for box in BOXES:
     VISIBILITY_SEGMENTS.extend(box["segments"])
 VISIBILITY_SEGMENTS.extend(WORLD_SEGMENTS)
 RAY_LENGTH = math.hypot(SCREEN_WIDTH, SCREEN_HEIGHT) + 1
-
-white = (255, 255, 255)
-black = (0, 0, 0)
-red = (104, 54, 55)
+RAY_ORIGIN_BIAS = 0.5
 
 pygame.init()
 pygame.display.set_caption("Simple PyGame Example")
@@ -72,6 +77,156 @@ def circle_rect_collide(cx, cy, radius, rect):
     dx = cx - nearest_x
     dy = cy - nearest_y
     return dx * dx + dy * dy < radius * radius
+
+
+def build_box_segments(left, top, width, height):
+    """박스 사각형으로 월드 좌표 선분을 생성"""
+    return [
+        ((left, top), (left + width, top)),
+        ((left + width, top), (left + width, top + height)),
+        ((left + width, top + height), (left, top + height)),
+        ((left, top + height), (left, top)),
+    ]
+
+
+def build_visibility_segments(boxes):
+    """현재 박스 목록으로 가시성 선분 리스트를 재생성"""
+    segments = []
+    for box in boxes:
+        segments.extend(box["segments"])
+    segments.extend(WORLD_SEGMENTS)
+    return segments
+
+
+def build_box_rects(boxes):
+    """박스 충돌 판정용 Rect 캐시를 생성"""
+    return [pygame.Rect(*box["rect"]) for box in boxes]
+
+
+def collides_with_any_box(x, y, radius, box_rects):
+    """원 좌표가 박스들 중 하나와 충돌하는지 판정"""
+    for box_rect in box_rects:
+        if circle_rect_collide(x, y, radius, box_rect):
+            return True
+    return False
+
+
+def build_map_enemies(map_enemies, screen_width, screen_height):
+    """맵 JSON 적 데이터를 런타임 enemy 상태로 변환"""
+    type_colors = {
+        "random_walker": (255, 255, 0),
+        "chaser": (255, 0, 0),
+        "sniper": (0, 200, 255),
+    }
+    enemies_from_map = {}
+    for idx, data in enumerate(map_enemies):
+        enemy_type = data.get("type", "random_walker")
+        radius = int(data.get("radius", 12))
+        enemy_pos_x = float(data.get("x", screen_width // 2))
+        enemy_pos_y = float(data.get("y", screen_height // 2))
+        max_hp = int(data.get("max_hp", data.get("hp", 100)))
+        enemy_state = {
+            "pos_x": enemy_pos_x,
+            "pos_y": enemy_pos_y,
+            "angle": random.uniform(0, 2 * math.pi),
+            "data": {
+                "name": data.get("name", f"map_enemy_{idx}"),
+                "color": tuple(data.get("color", type_colors.get(enemy_type, (255, 255, 0)))),
+                "image": data.get("image", None),
+                "type": enemy_type,
+                "speed": float(data.get("speed", 2.0)),
+                "radius": radius,
+            },
+            "hp": int(data.get("hp", max_hp)),
+            "max_hp": max_hp,
+            "last_seen_player": None,
+            "chase_timer": 0,
+        }
+        enemies_from_map[f"map_enemy_{idx}"] = enemy_state
+    return enemies_from_map
+
+
+def load_map_config(map_file_path, screen_width, screen_height):
+    """맵 JSON 파일을 읽어 BOXES/스폰/적 데이터를 반환"""
+    if not os.path.exists(map_file_path):
+        return None
+
+    try:
+        with open(map_file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as ex:
+        print(f"[Map Load Failed] {map_file_path}: {ex}")
+        return None
+
+    boxes = []
+    for i, item in enumerate(data.get("boxes", [])):
+        left = int(item.get("x", 0))
+        top = int(item.get("y", 0))
+        width = int(item.get("w", 0))
+        height = int(item.get("h", 0))
+        if width <= 0 or height <= 0:
+            continue
+        boxes.append({
+            "name": item.get("name", f"map_box_{i}"),
+            "width": width,
+            "height": height,
+            "left": left,
+            "top": top,
+            "rect": (left, top, width, height),
+            "segments": build_box_segments(left, top, width, height),
+            "image": item.get("image"),
+            "color": tuple(item.get("color", (0, 128, 255))),
+        })
+
+    spawn = data.get("player_spawn")
+    spawn_pos = None
+    if isinstance(spawn, dict):
+        sx = int(spawn.get("x", 0))
+        sy = int(spawn.get("y", 0))
+        spawn_pos = (sx, sy)
+
+    map_enemies = build_map_enemies(data.get("enemies", []), screen_width, screen_height)
+
+    return {
+        "boxes": boxes,
+        "spawn": spawn_pos,
+        "enemies": map_enemies,
+    }
+
+
+def load_runtime_world_state(screen_width, screen_height, default_spawn):
+    """맵 파일 또는 기본 오브젝트 설정으로 런타임 월드 상태를 구성"""
+    map_config = load_map_config(MAP_FILE, screen_width, screen_height)
+    if map_config is not None:
+        boxes = map_config["boxes"]
+        visibility_segments = build_visibility_segments(boxes)
+        box_rects = build_box_rects(boxes)
+        if map_config["spawn"] is not None:
+            spawn = map_config["spawn"]
+        else:
+            spawn = default_spawn
+        enemies = map_config["enemies"]
+        return {
+            "source": "map",
+            "boxes": boxes,
+            "box_rects": box_rects,
+            "visibility_segments": visibility_segments,
+            "spawn": spawn,
+            "enemies": enemies,
+        }
+
+    boxes = get_all_boxes_config(screen_width, screen_height)
+    visibility_segments = build_visibility_segments(boxes)
+    box_rects = build_box_rects(boxes)
+    enemies = initialize_enemies(boxes, screen_width, screen_height)
+    return {
+        "source": "default",
+        "boxes": boxes,
+        "box_rects": box_rects,
+        "visibility_segments": visibility_segments,
+        "spawn": default_spawn,
+        "enemies": enemies,
+    }
 
 
 # ===== 객체 생성/위치 함수들 =====
@@ -137,61 +292,143 @@ def get_ray_screen_intersections(start_x, start_y, dir_x, dir_y, screen_width, s
 def get_visibility_polygon(origin, segments):
     """레이 캐스팅을 사용하여 플레이어의 가시 범위를 계산"""
     px, py = origin
+    angle_eps = 0.0005
     angles = set()
     for seg in segments:
         for vx, vy in seg:
             base = math.atan2(vy - py, vx - px)
-            angles.update((base - 0.0001, base, base + 0.0001))
+            angles.update((base - angle_eps, base, base + angle_eps))
 
     points = []
     for angle in sorted(angles):
         ray_dir = (math.cos(angle) * RAY_LENGTH, math.sin(angle) * RAY_LENGTH)
+        ray_origin = (
+            px + math.cos(angle) * RAY_ORIGIN_BIAS,
+            py + math.sin(angle) * RAY_ORIGIN_BIAS,
+        )
         closest = None
         for seg in segments:
-            hit = line_intersection((px, py), ray_dir, seg[0], seg[1])
+            hit = line_intersection(ray_origin, ray_dir, seg[0], seg[1])
             if hit and (closest is None or hit[2] < closest[2]):
                 closest = hit
         if closest:
             points.append((angle, closest[0], closest[1]))
 
-    return [(p[1], p[2]) for p in points]
+    # 바로 인접한 중복 점을 제거해 면 찢김을 줄인다.
+    output = []
+    for _, x, y in points:
+        if not output:
+            output.append((x, y))
+            continue
+        px0, py0 = output[-1]
+        if (x - px0) * (x - px0) + (y - py0) * (y - py0) > 0.01:
+            output.append((x, y))
+
+    return output
 
 # 플레이어 초기 위치 설정
-pos_x = objects.OBJECTS["player"].get("start_x", 0)
-pos_y = objects.OBJECTS["player"].get("start_y", 0)
+initial_spawn = (
+    objects.OBJECTS["player"].get("start_x", 0),
+    objects.OBJECTS["player"].get("start_y", 0),
+)
+world_state = load_runtime_world_state(SCREEN_WIDTH, SCREEN_HEIGHT, initial_spawn)
+BOXES = world_state["boxes"]
+BOX_RECTS = world_state["box_rects"]
+VISIBILITY_SEGMENTS = world_state["visibility_segments"]
+pos_x, pos_y = world_state["spawn"]
+enemies = world_state["enemies"]
+if world_state["source"] == "map":
+    print(f"[Map Loaded] {MAP_FILE}")
 
-# 적 초기화 (ENEMY 딕셔너리에서 모든 적 생성)
-enemies = initialize_enemies(BOXES, SCREEN_WIDTH, SCREEN_HEIGHT)
+# 총알 리스트
+bullets = []
+
+# 총기 상태
+gun_cfg = GUNS[CURRENT_GUN]
+ammo = gun_cfg["magazine_size"]        # 현재 탄약
+reload_timer = 0                       # 재장전 카운트다운 (0 = 완료)
+fire_timer = 0                         # 발사 딜레이 카운트다운
 
 clock = pygame.time.Clock()
 while True:
-    clock.tick(60)
+    clock.tick(TARGET_FPS)
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             sys.exit()
-        # R키: 모든 코드 재로드
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+        # ` 키: 모든 코드 재로드
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_BACKQUOTE:
             import objects
             import enemy
             import screen
             importlib.reload(objects)
             importlib.reload(enemy)
             importlib.reload(screen)
-            boxes_config = objects.get_all_boxes_config(SCREEN_WIDTH, SCREEN_HEIGHT)
-            BOXES = boxes_config
-            VISIBILITY_SEGMENTS = []
-            for box in BOXES:
-                VISIBILITY_SEGMENTS.extend(box["segments"])
-            VISIBILITY_SEGMENTS.extend(WORLD_SEGMENTS)
-            # 플레이어 시작 위치도 재설정
-            pos_x = objects.OBJECTS["player"].get("start_x", 200)
-            pos_y = objects.OBJECTS["player"].get("start_y", 200)
-            # 적 시작 위치 재설정 (랜덤)
-            enemies = initialize_enemies(BOXES, SCREEN_WIDTH, SCREEN_HEIGHT)
-            print("[Reloaded] 모든 설정이 다시 로드되었습니다")
+            importlib.reload(gun)
+            from gun import GUNS, CURRENT_GUN, make_bullets
+            reload_spawn = (
+                objects.OBJECTS["player"].get("start_x", 200),
+                objects.OBJECTS["player"].get("start_y", 200),
+            )
+            world_state = load_runtime_world_state(SCREEN_WIDTH, SCREEN_HEIGHT, reload_spawn)
+            BOXES = world_state["boxes"]
+            BOX_RECTS = world_state["box_rects"]
+            VISIBILITY_SEGMENTS = world_state["visibility_segments"]
+            pos_x, pos_y = world_state["spawn"]
+            enemies = world_state["enemies"]
+            if world_state["source"] == "map":
+                print(f"[Reloaded + Map] {MAP_FILE}")
+            else:
+                print("[Reloaded] 기본 맵 설정이 다시 로드되었습니다")
+            bullets = []
+            gun_cfg = GUNS[CURRENT_GUN]
+            ammo = gun_cfg["magazine_size"]
+            reload_timer = 0
+            fire_timer = 0
+
+        # R 키 외 별도: F 키로 수동 재장전
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_f:
+            if ammo < gun_cfg["magazine_size"] and reload_timer == 0:
+                reload_timer = gun_cfg["reload_time"]
+
+        # 반자동 총: 클릭 이벤트에서 발사
+        if not gun_cfg["auto_fire"]:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if ammo > 0 and reload_timer == 0 and fire_timer == 0:
+                    mx, my = pygame.mouse.get_pos()
+                    dx = mx - pos_x
+                    dy = my - pos_y
+                    dist = math.sqrt(dx * dx + dy * dy)
+                    if dist > 0:
+                        bullets.extend(make_bullets(CURRENT_GUN, pos_x, pos_y, dx / dist, dy / dist))
+                        ammo -= 1
+                        fire_timer = gun_cfg["fire_rate"]
+                        if ammo == 0:
+                            reload_timer = gun_cfg["reload_time"]
 
     key_event = pygame.key.get_pressed()
-    speed = 3
+
+    # 자동 연사 총: 매 프레임 버튼 상태 체크
+    if gun_cfg["auto_fire"] and pygame.mouse.get_pressed()[0]:
+        if ammo > 0 and reload_timer == 0 and fire_timer == 0:
+            mx, my = pygame.mouse.get_pos()
+            dx = mx - pos_x
+            dy = my - pos_y
+            dist = math.sqrt(dx * dx + dy * dy)
+            if dist > 0:
+                bullets.extend(make_bullets(CURRENT_GUN, pos_x, pos_y, dx / dist, dy / dist))
+                ammo -= 1
+                fire_timer = gun_cfg["fire_rate"]
+                if ammo == 0:
+                    reload_timer = gun_cfg["reload_time"]
+
+    # 타이머 감소
+    if fire_timer > 0:
+        fire_timer -= 1
+    if reload_timer > 0:
+        reload_timer -= 1
+        if reload_timer == 0:
+            ammo = gun_cfg["magazine_size"]
+    speed = PLAYER_SPEED
 
     # 이동량 분리 (슬라이딩 처리)
     move_x = 0
@@ -208,44 +445,99 @@ while True:
     # x축 이동 & 충돌 체크
     new_x = pos_x + move_x
     new_y = pos_y
-    can_move_x = True
-    for box in BOXES:
-        box_rect = pygame.Rect(*box["rect"])
-        if circle_rect_collide(new_x, new_y, 20, box_rect):
-            can_move_x = False
-            break
-    if can_move_x:
+    if not collides_with_any_box(new_x, new_y, PLAYER_RADIUS, BOX_RECTS):
         pos_x = new_x
 
     # y축 이동 & 충돌 체크
     new_x = pos_x
     new_y = pos_y + move_y
-    can_move_y = True
-    for box in BOXES:
-        box_rect = pygame.Rect(*box["rect"])
-        if circle_rect_collide(new_x, new_y, 20, box_rect):
-            can_move_y = False
-            break
-    if can_move_y:
+    if not collides_with_any_box(new_x, new_y, PLAYER_RADIUS, BOX_RECTS):
         pos_y = new_y
 
     # 화면 경계 제한
-    if pos_x < 20:
-        pos_x = 20
-    if pos_x > SCREEN_WIDTH - 20:
-        pos_x = SCREEN_WIDTH - 20
-    if pos_y < 20:
-        pos_y = 20
-    if pos_y > SCREEN_HEIGHT - 20:
-        pos_y = SCREEN_HEIGHT - 20
+    if pos_x < PLAYER_RADIUS:
+        pos_x = PLAYER_RADIUS
+    if pos_x > SCREEN_WIDTH - PLAYER_RADIUS:
+        pos_x = SCREEN_WIDTH - PLAYER_RADIUS
+    if pos_y < PLAYER_RADIUS:
+        pos_y = PLAYER_RADIUS
+    if pos_y > SCREEN_HEIGHT - PLAYER_RADIUS:
+        pos_y = SCREEN_HEIGHT - PLAYER_RADIUS
 
     # 가시영역 계산
     visible_poly = get_visibility_polygon((pos_x, pos_y), VISIBILITY_SEGMENTS)
 
     # 모든 적 이동 로직
-    update_enemy_ai(enemies, pos_x, pos_y, visible_poly, BOXES, SCREEN_WIDTH, SCREEN_HEIGHT, screen.point_in_polygon)
+    update_enemy_ai(
+        enemies,
+        pos_x,
+        pos_y,
+        visible_poly,
+        BOXES,
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT,
+        screen.point_in_polygon,
+        BOX_RECTS,
+    )
+
+    # 총알 이동 및 충돌 처리
+    next_bullets = []
+    dead_enemy_keys = set()
+    for bullet in bullets:
+        bullet["x"] += bullet["dx"]
+        bullet["y"] += bullet["dy"]
+        bx, by = bullet["x"], bullet["y"]
+        # 화면 밖 제거
+        if bx < 0 or bx > SCREEN_WIDTH or by < 0 or by > SCREEN_HEIGHT:
+            continue
+        # 수명 처리
+        if bullet["lifetime"] != -1:
+            bullet["lifetime"] -= 1
+            if bullet["lifetime"] <= 0:
+                continue
+        # 벽 충돌 (관통 총알은 통과)
+        if not bullet["penetrate"]:
+            wall_hit = False
+            for box_rect in BOX_RECTS:
+                if circle_rect_collide(bx, by, bullet["radius"], box_rect):
+                    wall_hit = True
+                    break
+            if wall_hit:
+                continue
+
+        # 적 충돌: 총알 데미지만큼 체력 감소
+        enemy_hit = False
+        for enemy_key, enemy_obj in enemies.items():
+            if enemy_key in dead_enemy_keys:
+                continue
+            ex = enemy_obj["pos_x"]
+            ey = enemy_obj["pos_y"]
+            er = enemy_obj["data"]["radius"]
+            dx = bx - ex
+            dy = by - ey
+            hit_dist = bullet["radius"] + er
+            if dx * dx + dy * dy <= hit_dist * hit_dist:
+                damage = bullet.get("damage", 0)
+                current_hp = enemy_obj.get("hp", enemy_obj.get("max_hp", 100))
+                enemy_obj["hp"] = current_hp - damage
+                enemy_hit = True
+                if enemy_obj["hp"] <= 0:
+                    dead_enemy_keys.add(enemy_key)
+                # 비관통 총알은 첫 충돌 시 소멸
+                if not bullet["penetrate"]:
+                    break
+
+        if enemy_hit and not bullet["penetrate"]:
+            continue
+
+        next_bullets.append(bullet)
+    bullets = next_bullets
+
+    # 체력이 0 이하인 적 제거
+    for dead_key in dead_enemy_keys:
+        if dead_key in enemies:
+            del enemies[dead_key]
 
     # 화면 렌더링
     mouse_pos = pygame.mouse.get_pos()
-    screen.render_game_screen(screen_surface, visible_poly, BOXES, pos_x, pos_y, enemies, mouse_pos, font_small, SCREEN_WIDTH, SCREEN_HEIGHT, get_ray_screen_intersections)
-print("sus")
+    screen.render_game_screen(screen_surface, visible_poly, BOXES, pos_x, pos_y, enemies, bullets, mouse_pos, font_small, SCREEN_WIDTH, SCREEN_HEIGHT, get_ray_screen_intersections, ammo, gun_cfg["magazine_size"], reload_timer)
