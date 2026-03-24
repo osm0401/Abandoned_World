@@ -1,0 +1,40 @@
+# setting.py
+# 게임 전역 설정값(상수) 모음
+
+# 화면/실행 설정
+SCREEN_WIDTH = 1280
+SCREEN_HEIGHT = 960
+TARGET_FPS = 60
+MAP_FILE = "my_map.json"
+WINDOW_TITLE = "Simple PyGame Example"
+FONT_SMALL_SIZE = 20
+
+# 플레이어 설정
+PLAYER_RADIUS = 20
+PLAYER_SPEED = 3
+
+# 시야(가시성) 계산 설정
+RAY_ORIGIN_BIAS = 0.5
+RAY_ANGLE_EPSILON = 0.0005
+
+# 문/방 설정
+DOOR_THICKNESS = 20
+DOOR_WIDTH = 120
+DOOR_HEIGHT = 110
+ROOM_WIDTH = 440
+ROOM_HEIGHT = 360
+
+# 렌더링 토글
+ALWAYS_SEE = True
+
+# 공용 색상
+COLOR_BLACK = (0, 0, 0)
+COLOR_WHITE = (255, 255, 255)
+COLOR_RED = (255, 0, 0)
+COLOR_UI_RED = (255, 0, 0)
+COLOR_DOOR_CLOSED = (180, 60, 40)
+COLOR_DOOR_OPEN = (245, 220, 60)
+
+# 체력바 색상
+COLOR_HP_BG = (80, 20, 20)
+COLOR_HP_FILL = (50, 220, 70)

@@ -9,15 +9,17 @@ import objects
 import enemy
 import screen
 import gun
+import setting as st
 from objects import get_all_boxes_config
 from enemy import initialize_enemies, update_enemy_ai
 from gun import GUNS, CURRENT_GUN, make_bullets
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 960
-MAP_FILE = "my_map.json"
-PLAYER_RADIUS = 20
-PLAYER_SPEED = 3
-TARGET_FPS = 60
+SCREEN_WIDTH = st.SCREEN_WIDTH
+SCREEN_HEIGHT = st.SCREEN_HEIGHT
+MAP_FILE = st.MAP_FILE
+PLAYER_RADIUS = st.PLAYER_RADIUS
+PLAYER_SPEED = st.PLAYER_SPEED
+TARGET_FPS = st.TARGET_FPS
+DOOR_THICKNESS = st.DOOR_THICKNESS
 
 boxes_config = get_all_boxes_config(SCREEN_WIDTH, SCREEN_HEIGHT)
 BOXES = boxes_config  # 모든 박스 설정 리스트
@@ -34,14 +36,14 @@ for box in BOXES:
     VISIBILITY_SEGMENTS.extend(box["segments"])
 VISIBILITY_SEGMENTS.extend(WORLD_SEGMENTS)
 RAY_LENGTH = math.hypot(SCREEN_WIDTH, SCREEN_HEIGHT) + 1
-RAY_ORIGIN_BIAS = 0.5
+RAY_ORIGIN_BIAS = st.RAY_ORIGIN_BIAS
 
 pygame.init()
-pygame.display.set_caption("Simple PyGame Example")
+pygame.display.set_caption(st.WINDOW_TITLE)
 screen_surface = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 
 # 마우스 위치 표시용 폰트
-font_small = pygame.font.Font(None, 20)
+font_small = pygame.font.Font(None, st.FONT_SMALL_SIZE)
 
 
 # ===== 기본 수학/기하학 함수들 =====
@@ -96,6 +98,82 @@ def build_visibility_segments(boxes):
         segments.extend(box["segments"])
     segments.extend(WORLD_SEGMENTS)
     return segments
+
+
+def create_box_entry(name, left, top, width, height, color, image=None):
+    """사각형 정보를 게임 박스 엔트리로 변환"""
+    return {
+        "name": name,
+        "width": width,
+        "height": height,
+        "left": left,
+        "top": top,
+        "rect": (left, top, width, height),
+        "segments": build_box_segments(left, top, width, height),
+        "image": image,
+        "color": color,
+    }
+
+
+def create_room_config(screen_width, screen_height):
+    """문 잠금 해제 조건에 사용할 중앙 방 영역을 생성"""
+    room_w = st.ROOM_WIDTH
+    room_h = st.ROOM_HEIGHT
+    room_left = screen_width // 2 - room_w // 2
+    room_top = screen_height // 2 - room_h // 2
+    return pygame.Rect(room_left, room_top, room_w, room_h)
+
+
+def create_room_doors(screen_width, screen_height):
+    """요청한 4개 문(위/아래/왼쪽/가운데) 정의를 생성"""
+    room_rect = create_room_config(screen_width, screen_height)
+    door_w = st.DOOR_WIDTH
+    door_h = st.DOOR_HEIGHT
+
+    # 화면 끝 기준으로 문을 배치한다.
+    top_rect = pygame.Rect(screen_width // 2 - door_w // 2, 0, door_w, DOOR_THICKNESS)
+    bottom_rect = pygame.Rect(screen_width // 2 - door_w // 2, screen_height - DOOR_THICKNESS, door_w, DOOR_THICKNESS)
+    left_rect = pygame.Rect(0, screen_height // 2 - door_h // 2, DOOR_THICKNESS, door_h)
+    # "가운데 쪽" 문은 오른쪽 화면 중앙에 배치
+    center_rect = pygame.Rect(screen_width - DOOR_THICKNESS, screen_height // 2 - door_h // 2, DOOR_THICKNESS, door_h)
+
+    doors = [
+        {"id": "door_top", "rect": top_rect, "open": False, "room": room_rect},
+        {"id": "door_bottom", "rect": bottom_rect, "open": False, "room": room_rect},
+        {"id": "door_left", "rect": left_rect, "open": False, "room": room_rect},
+        {"id": "door_center", "rect": center_rect, "open": False, "room": room_rect},
+    ]
+    return doors, room_rect
+
+
+def compose_world_boxes(base_boxes, doors):
+    """기본 박스 + 닫힌 문을 합쳐 충돌/시야 계산용 박스 목록 생성"""
+    combined = list(base_boxes)
+    for door in doors:
+        if door["open"]:
+            continue
+        rect = door["rect"]
+        combined.append(
+            create_box_entry(
+                name=door["id"],
+                left=rect.x,
+                top=rect.y,
+                width=rect.width,
+                height=rect.height,
+                color=st.COLOR_DOOR_CLOSED,
+                image=None,
+            )
+        )
+    return combined
+
+
+def collect_room_enemy_keys(enemies, room_rect):
+    """방 영역 안에 있는 적 키를 모아 잠금 해제 조건으로 사용"""
+    keys = set()
+    for enemy_key, enemy_obj in enemies.items():
+        if room_rect.collidepoint(enemy_obj["pos_x"], enemy_obj["pos_y"]):
+            keys.add(enemy_key)
+    return keys
 
 
 def build_box_rects(boxes):
@@ -292,7 +370,7 @@ def get_ray_screen_intersections(start_x, start_y, dir_x, dir_y, screen_width, s
 def get_visibility_polygon(origin, segments):
     """레이 캐스팅을 사용하여 플레이어의 가시 범위를 계산"""
     px, py = origin
-    angle_eps = 0.0005
+    angle_eps = st.RAY_ANGLE_EPSILON
     angles = set()
     for seg in segments:
         for vx, vy in seg:
@@ -332,11 +410,16 @@ initial_spawn = (
     objects.OBJECTS["player"].get("start_y", 0),
 )
 world_state = load_runtime_world_state(SCREEN_WIDTH, SCREEN_HEIGHT, initial_spawn)
-BOXES = world_state["boxes"]
-BOX_RECTS = world_state["box_rects"]
-VISIBILITY_SEGMENTS = world_state["visibility_segments"]
+BASE_BOXES = world_state["boxes"]
+DOORS, ROOM_RECT = create_room_doors(SCREEN_WIDTH, SCREEN_HEIGHT)
 pos_x, pos_y = world_state["spawn"]
 enemies = world_state["enemies"]
+ROOM_ENEMY_KEYS = collect_room_enemy_keys(enemies, ROOM_RECT)
+
+# 문이 기본적으로 닫힌 상태이므로 월드 박스에 포함한다.
+BOXES = compose_world_boxes(BASE_BOXES, DOORS)
+BOX_RECTS = build_box_rects(BOXES)
+VISIBILITY_SEGMENTS = build_visibility_segments(BOXES)
 if world_state["source"] == "map":
     print(f"[Map Loaded] {MAP_FILE}")
 
@@ -370,11 +453,14 @@ while True:
                 objects.OBJECTS["player"].get("start_y", 200),
             )
             world_state = load_runtime_world_state(SCREEN_WIDTH, SCREEN_HEIGHT, reload_spawn)
-            BOXES = world_state["boxes"]
-            BOX_RECTS = world_state["box_rects"]
-            VISIBILITY_SEGMENTS = world_state["visibility_segments"]
+            BASE_BOXES = world_state["boxes"]
+            DOORS, ROOM_RECT = create_room_doors(SCREEN_WIDTH, SCREEN_HEIGHT)
             pos_x, pos_y = world_state["spawn"]
             enemies = world_state["enemies"]
+            ROOM_ENEMY_KEYS = collect_room_enemy_keys(enemies, ROOM_RECT)
+            BOXES = compose_world_boxes(BASE_BOXES, DOORS)
+            BOX_RECTS = build_box_rects(BOXES)
+            VISIBILITY_SEGMENTS = build_visibility_segments(BOXES)
             if world_state["source"] == "map":
                 print(f"[Reloaded + Map] {MAP_FILE}")
             else:
@@ -538,6 +624,43 @@ while True:
         if dead_key in enemies:
             del enemies[dead_key]
 
+    # 문 해제 조건:
+    # 1) 방 내부 적 목록이 있으면 그 적들이 전멸했을 때
+    # 2) 방 내부 적 목록이 비어 있으면 전체 적이 전멸했을 때
+    if any(not door["open"] for door in DOORS):
+        if ROOM_ENEMY_KEYS:
+            should_open_doors = not any(enemy_key in enemies for enemy_key in ROOM_ENEMY_KEYS)
+            open_reason = "방 안의 적을 모두 처치"
+        else:
+            should_open_doors = len(enemies) == 0
+            open_reason = "전체 적을 모두 처치"
+
+        if should_open_doors:
+            for door in DOORS:
+                door["open"] = True
+            ROOM_ENEMY_KEYS = set()
+            BOXES = compose_world_boxes(BASE_BOXES, DOORS)
+            BOX_RECTS = build_box_rects(BOXES)
+            VISIBILITY_SEGMENTS = build_visibility_segments(BOXES)
+            print(f"[Door Opened] {open_reason}하여 문이 열렸습니다")
+
     # 화면 렌더링
     mouse_pos = pygame.mouse.get_pos()
-    screen.render_game_screen(screen_surface, visible_poly, BOXES, pos_x, pos_y, enemies, bullets, mouse_pos, font_small, SCREEN_WIDTH, SCREEN_HEIGHT, get_ray_screen_intersections, ammo, gun_cfg["magazine_size"], reload_timer)
+    screen.render_game_screen(
+        screen_surface,
+        visible_poly,
+        BOXES,
+        pos_x,
+        pos_y,
+        enemies,
+        bullets,
+        mouse_pos,
+        font_small,
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT,
+        get_ray_screen_intersections,
+        ammo,
+        gun_cfg["magazine_size"],
+        reload_timer,
+        DOORS,
+    )

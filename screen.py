@@ -3,10 +3,11 @@
 
 import pygame
 import math
+import setting as st
 
 # 이미지 캐시 (성능 최적화)
 _image_cache = {}
-always_see = False
+always_see = st.ALWAYS_SEE
 def load_image(image_path):
     """이미지를 로드하고 캐시 (중복 로드 방지)"""
     if image_path in _image_cache:
@@ -20,7 +21,7 @@ def load_image(image_path):
         print(f"이미지 로드 실패: {image_path}")
         return None
 
-def render_game_screen(screen, visible_poly, BOXES, pos_x, pos_y, enemies, bullets, mouse_pos, font_small, SCREEN_WIDTH, SCREEN_HEIGHT, get_ray_screen_intersections, ammo=0, magazine_size=0, reload_timer=0):
+def render_game_screen(screen, visible_poly, BOXES, pos_x, pos_y, enemies, bullets, mouse_pos, font_small, SCREEN_WIDTH, SCREEN_HEIGHT, get_ray_screen_intersections, ammo=0, magazine_size=0, reload_timer=0, doors=None):
     """
     게임 화면을 렌더링하는 함수
 
@@ -36,9 +37,9 @@ def render_game_screen(screen, visible_poly, BOXES, pos_x, pos_y, enemies, bulle
         get_ray_screen_intersections: 화면 경계 교차점 계산 함수
     """
     # 색상 정의
-    black = (0, 0, 0)
-    white = (255, 255, 255)
-    red = (255, 0, 0)
+    black = st.COLOR_BLACK
+    white = st.COLOR_WHITE
+    red = st.COLOR_RED
 
     # 화면 초기화
     screen.fill(black)
@@ -111,21 +112,28 @@ def render_game_screen(screen, visible_poly, BOXES, pos_x, pos_y, enemies, bulle
             bar_height = 5
             bar_x = int(enemy_pos_x - bar_width / 2)
             bar_y = int(enemy_pos_y + enemy_radius + 6)
-            pygame.draw.rect(screen, (80, 20, 20), (bar_x, bar_y, bar_width, bar_height))
-            pygame.draw.rect(screen, (50, 220, 70), (bar_x, bar_y, int(bar_width * hp_ratio), bar_height))
+            pygame.draw.rect(screen, st.COLOR_HP_BG, (bar_x, bar_y, bar_width, bar_height))
+            pygame.draw.rect(screen, st.COLOR_HP_FILL, (bar_x, bar_y, int(bar_width * hp_ratio), bar_height))
     # 총알 그리기
     for bullet in bullets:
         pygame.draw.circle(screen, bullet["color"], (int(bullet["x"]), int(bullet["y"])), bullet["radius"])
 
+    # 문 그리기 (닫힘: 빨강, 열림: 노랑)
+    if doors:
+        for door in doors:
+            rect = door["rect"]
+            color = st.COLOR_DOOR_OPEN if door.get("open", False) else st.COLOR_DOOR_CLOSED
+            pygame.draw.rect(screen, color, rect)
+
     # 마우스 위치 표시
-    mouse_text = font_small.render(f"Mouse: {mouse_pos[0]}, {mouse_pos[1]}", True, (255, 0, 0))
+    mouse_text = font_small.render(f"Mouse: {mouse_pos[0]}, {mouse_pos[1]}", True, st.COLOR_UI_RED)
     screen.blit(mouse_text, (10, 10))
 
     # 탄약 / 재장전 표시
     if reload_timer > 0:
-        ammo_text = font_small.render("RELOADING...", True, (255, 0, 0))
+        ammo_text = font_small.render("RELOADING...", True, st.COLOR_UI_RED)
     else:
-        ammo_text = font_small.render(f"AMMO  {ammo} / {magazine_size}", True, (255, 0, 0))
+        ammo_text = font_small.render(f"AMMO  {ammo} / {magazine_size}", True, st.COLOR_UI_RED)
     screen.blit(ammo_text, (10, 25))
 
     # 화면 업데이트

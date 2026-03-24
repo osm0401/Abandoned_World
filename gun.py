@@ -30,7 +30,7 @@
 
 import math
 import random
-CURRENT_GUN = "sniper"
+CURRENT_GUN = "smg"
 GUNS = {
     "pistol": {
         "name"         : "pistol",
