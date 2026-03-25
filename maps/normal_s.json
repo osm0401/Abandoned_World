@@ -1,0 +1,201 @@
+﻿{
+    "meta":  {
+                 "name":  "normal_s",
+                 "created_at":  "2026-03-25T00:00:00",
+                 "width":  1000,
+                 "height":  960,
+                 "grid_size":  40,
+                 "theme":  "split_bridge",
+                 "difficulty":  7
+             },
+    "player_spawn":  {
+                         "x":  80,
+                         "y":  480
+                     },
+    "boxes":  [
+                  {
+                      "x":  160,
+                      "y":  420,
+                      "w":  280,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  560,
+                      "y":  420,
+                      "w":  280,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  460,
+                      "y":  120,
+                      "w":  40,
+                      "h":  240,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  500,
+                      "y":  600,
+                      "w":  40,
+                      "h":  240,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  300,
+                      "y":  240,
+                      "w":  40,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  340,
+                      "y":  240,
+                      "w":  40,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  300,
+                      "y":  280,
+                      "w":  40,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  620,
+                      "y":  640,
+                      "w":  40,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  660,
+                      "y":  640,
+                      "w":  40,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  620,
+                      "y":  680,
+                      "w":  40,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  }
+              ],
+    "doors":  [
+
+              ],
+    "enemies":  [
+                    {
+                        "type":  "random_walker",
+                        "x":  820,
+                        "y":  120,
+                        "radius":  12,
+                        "speed":  2,
+                        "hp":  185
+                    },
+                    {
+                        "type":  "sniper",
+                        "x":  900,
+                        "y":  260,
+                        "radius":  12,
+                        "speed":  1.7,
+                        "hp":  205
+                    },
+                    {
+                        "type":  "chaser",
+                        "x":  860,
+                        "y":  420,
+                        "radius":  12,
+                        "speed":  2.2,
+                        "hp":  195
+                    },
+                    {
+                        "type":  "random_walker",
+                        "x":  900,
+                        "y":  600,
+                        "radius":  12,
+                        "speed":  2,
+                        "hp":  185
+                    },
+                    {
+                        "type":  "sniper",
+                        "x":  820,
+                        "y":  760,
+                        "radius":  12,
+                        "speed":  1.7,
+                        "hp":  205
+                    },
+                    {
+                        "type":  "chaser",
+                        "x":  900,
+                        "y":  860,
+                        "radius":  12,
+                        "speed":  2.2,
+                        "hp":  195
+                    },
+                    {
+                        "type":  "random_walker",
+                        "x":  700,
+                        "y":  540,
+                        "radius":  12,
+                        "speed":  2,
+                        "hp":  185
+                    }
+                ],
+    "props":  [
+
+              ]
+}

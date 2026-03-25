@@ -3,8 +3,10 @@ import sys
 import math
 import json
 import os
-import importlib
 import random
+import queue
+import threading
+import tkinter as tk
 import objects
 import enemy
 import screen
@@ -12,14 +14,45 @@ import gun
 import setting as st
 from objects import get_all_boxes_config
 from enemy import initialize_enemies, update_enemy_ai
-from gun import GUNS, CURRENT_GUN, make_bullets
+from gun import GUNS, make_bullets
 SCREEN_WIDTH = st.SCREEN_WIDTH
 SCREEN_HEIGHT = st.SCREEN_HEIGHT
-MAP_FILE = st.MAP_FILE
 PLAYER_RADIUS = st.PLAYER_RADIUS
 PLAYER_SPEED = st.PLAYER_SPEED
 TARGET_FPS = st.TARGET_FPS
 DOOR_THICKNESS = st.DOOR_THICKNESS
+
+# 맵 순환 목록: normal_a -> normal_z
+MAP_CYCLE_FILES = [f"maps/normal_{chr(code)}.json" for code in range(ord("a"), ord("z") + 1)]
+MAP_INDEX = 0
+MAP_FILE = MAP_CYCLE_FILES[MAP_INDEX]
+CURRENT_MAP_FILE = MAP_FILE
+
+SIDE_TO_DOOR_ID = {
+    "top": "door_top",
+    "bottom": "door_bottom",
+    "left": "door_left",
+    "right": "door_center",
+}
+OPPOSITE_SIDE = {
+    "top": "bottom",
+    "bottom": "top",
+    "left": "right",
+    "right": "left",
+}
+SIDE_DELTAS = {
+    "top": (0, -1),
+    "bottom": (0, 1),
+    "left": (-1, 0),
+    "right": (1, 0),
+}
+
+# 맵 연결 그래프: {"maps/normal_a.json": {"right": "maps/normal_b.json", ...}, ...}
+MAP_CONNECTIONS = {MAP_FILE: {}}
+VISITED_MAPS = {MAP_FILE}
+CLEARED_MAPS = set()
+MAP_POSITIONS = {MAP_FILE: (0, 0)}
+POSITION_TO_MAP = {(0, 0): MAP_FILE}
 
 boxes_config = get_all_boxes_config(SCREEN_WIDTH, SCREEN_HEIGHT)
 BOXES = boxes_config  # 모든 박스 설정 리스트
@@ -44,6 +77,65 @@ screen_surface = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 
 # 마우스 위치 표시용 폰트
 font_small = pygame.font.Font(None, st.FONT_SMALL_SIZE)
+DEBUG_COMMAND_QUEUE = queue.Queue()
+
+
+def queue_debug_command(command_name, payload=None):
+    """디버그 창 명령을 메인 루프로 전달"""
+    DEBUG_COMMAND_QUEUE.put((command_name, payload))
+
+
+def start_debug_window():
+    """별도 디버그 제어 창을 실행"""
+    def run_debug_window():
+        try:
+            root = tk.Tk()
+            root.title("debug")
+            root.geometry("420x340")
+            root.resizable(False, False)
+
+            gun_var = tk.StringVar(value=gun.CURRENT_GUN)
+            x_var = tk.StringVar(value=str(SCREEN_WIDTH // 2))
+            y_var = tk.StringVar(value=str(SCREEN_HEIGHT // 2))
+            status_var = tk.StringVar(value="ready")
+
+            frame = tk.Frame(root, padx=18, pady=18)
+            frame.pack(fill="both", expand=True)
+
+            tk.Button(frame, text="kill_all", command=lambda: queue_debug_command("kill_all")).pack(fill="x")
+
+            tk.Label(frame, text="teleport x").pack(anchor="w", pady=(10, 0))
+            tk.Entry(frame, textvariable=x_var).pack(fill="x")
+            tk.Label(frame, text="teleport y").pack(anchor="w", pady=(6, 0))
+            tk.Entry(frame, textvariable=y_var).pack(fill="x")
+
+            def send_teleport():
+                try:
+                    target_x = float(x_var.get())
+                    target_y = float(y_var.get())
+                except ValueError:
+                    status_var.set("teleport: invalid")
+                    return
+                queue_debug_command("teleport", (target_x, target_y))
+                status_var.set("teleport queued")
+
+            tk.Button(frame, text="teleport", command=send_teleport).pack(fill="x", pady=(8, 0))
+
+            tk.Label(frame, text="switch_gun").pack(anchor="w", pady=(10, 0))
+            tk.OptionMenu(frame, gun_var, *sorted(GUNS.keys())).pack(fill="x")
+
+            def send_switch_gun():
+                queue_debug_command("switch_gun", gun_var.get())
+                status_var.set(f"switch_gun: {gun_var.get()}")
+
+            tk.Button(frame, text="apply gun", command=send_switch_gun).pack(fill="x", pady=(8, 0))
+            tk.Label(frame, textvariable=status_var, anchor="w").pack(fill="x", pady=(12, 0))
+
+            root.mainloop()
+        except Exception as ex:
+            print(f"[Debug Window Failed] {ex}")
+
+    threading.Thread(target=run_debug_window, daemon=True).start()
 
 
 # ===== 기본 수학/기하학 함수들 =====
@@ -189,26 +281,77 @@ def collides_with_any_box(x, y, radius, box_rects):
     return False
 
 
-def build_map_enemies(map_enemies, screen_width, screen_height):
+def find_valid_enemy_spawn(x, y, radius, screen_width, screen_height, box_rects):
+    """벽과 겹치지 않는 안전한 적 스폰 좌표를 반환"""
+    def clamp(value, low, high):
+        return max(low, min(value, high))
+
+    # 먼저 화면 내부로 보정
+    x = clamp(float(x), radius, screen_width - radius)
+    y = clamp(float(y), radius, screen_height - radius)
+
+    if not collides_with_any_box(x, y, radius, box_rects):
+        return x, y
+
+    # 근거리 탐색: 원본 위치 주변에서 가장 먼저 가능한 위치를 찾는다.
+    step = max(8, radius)
+    offsets = [
+        (1, 0), (-1, 0), (0, 1), (0, -1),
+        (1, 1), (1, -1), (-1, 1), (-1, -1),
+    ]
+    for dist in range(step, 301, step):
+        for ox, oy in offsets:
+            nx = clamp(x + ox * dist, radius, screen_width - radius)
+            ny = clamp(y + oy * dist, radius, screen_height - radius)
+            if not collides_with_any_box(nx, ny, radius, box_rects):
+                return nx, ny
+
+    # 최종 fallback: 랜덤 샘플로 안전 위치를 찾는다.
+    for _ in range(120):
+        nx = random.randint(radius, screen_width - radius)
+        ny = random.randint(radius, screen_height - radius)
+        if not collides_with_any_box(nx, ny, radius, box_rects):
+            return float(nx), float(ny)
+
+    # 최악의 경우 원본(보정) 좌표 반환
+    return x, y
+
+
+def build_map_enemies(map_enemies, screen_width, screen_height, box_rects):
     """맵 JSON 적 데이터를 런타임 enemy 상태로 변환"""
+    legacy_type_map = {
+        "random_walker": "pistol",
+        "chaser": "ar",
+    }
     type_colors = {
-        "random_walker": (255, 255, 0),
-        "chaser": (255, 0, 0),
-        "sniper": (0, 200, 255),
+        "pistol": (255, 230, 80),
+        "shotgun": (255, 140, 0),
+        "smg": (180, 255, 180),
+        "ar": (120, 255, 220),
+        "sniper": (120, 220, 255),
     }
     enemies_from_map = {}
     for idx, data in enumerate(map_enemies):
-        enemy_type = data.get("type", "random_walker")
+        enemy_type = data.get("type", data.get("name", "pistol"))
+        enemy_type = legacy_type_map.get(enemy_type, enemy_type)
         radius = int(data.get("radius", 12))
         enemy_pos_x = float(data.get("x", screen_width // 2))
         enemy_pos_y = float(data.get("y", screen_height // 2))
+        enemy_pos_x, enemy_pos_y = find_valid_enemy_spawn(
+            enemy_pos_x,
+            enemy_pos_y,
+            radius,
+            screen_width,
+            screen_height,
+            box_rects,
+        )
         max_hp = int(data.get("max_hp", data.get("hp", 100)))
         enemy_state = {
             "pos_x": enemy_pos_x,
             "pos_y": enemy_pos_y,
             "angle": random.uniform(0, 2 * math.pi),
             "data": {
-                "name": data.get("name", f"map_enemy_{idx}"),
+                "name": legacy_type_map.get(data.get("name", enemy_type), data.get("name", enemy_type)),
                 "color": tuple(data.get("color", type_colors.get(enemy_type, (255, 255, 0)))),
                 "image": data.get("image", None),
                 "type": enemy_type,
@@ -230,7 +373,8 @@ def load_map_config(map_file_path, screen_width, screen_height):
         return None
 
     try:
-        with open(map_file_path, "r", encoding="utf-8") as f:
+        # PowerShell에서 저장된 UTF-8 BOM 파일도 안전하게 읽는다.
+        with open(map_file_path, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
     except Exception as ex:
         print(f"[Map Load Failed] {map_file_path}: {ex}")
@@ -263,7 +407,8 @@ def load_map_config(map_file_path, screen_width, screen_height):
         sy = int(spawn.get("y", 0))
         spawn_pos = (sx, sy)
 
-    map_enemies = build_map_enemies(data.get("enemies", []), screen_width, screen_height)
+    box_rects = build_box_rects(boxes)
+    map_enemies = build_map_enemies(data.get("enemies", []), screen_width, screen_height, box_rects)
 
     return {
         "boxes": boxes,
@@ -272,9 +417,9 @@ def load_map_config(map_file_path, screen_width, screen_height):
     }
 
 
-def load_runtime_world_state(screen_width, screen_height, default_spawn):
+def load_runtime_world_state(map_file_path, screen_width, screen_height, default_spawn):
     """맵 파일 또는 기본 오브젝트 설정으로 런타임 월드 상태를 구성"""
-    map_config = load_map_config(MAP_FILE, screen_width, screen_height)
+    map_config = load_map_config(map_file_path, screen_width, screen_height)
     if map_config is not None:
         boxes = map_config["boxes"]
         visibility_segments = build_visibility_segments(boxes)
@@ -305,6 +450,173 @@ def load_runtime_world_state(screen_width, screen_height, default_spawn):
         "spawn": default_spawn,
         "enemies": enemies,
     }
+
+
+def get_edge_spawn(entry_side):
+    """다른 맵에서 진입했을 때 방향별 시작 위치를 반환"""
+    mid_x = SCREEN_WIDTH // 2
+    mid_y = SCREEN_HEIGHT // 2
+    # 닫힌 문 두께를 넘어선 위치에서 시작해야 문 박스와 겹치지 않는다.
+    margin = DOOR_THICKNESS + PLAYER_RADIUS + 8
+    if entry_side == "left":
+        return (margin, mid_y)
+    if entry_side == "right":
+        return (SCREEN_WIDTH - margin, mid_y)
+    if entry_side == "top":
+        return (mid_x, margin)
+    if entry_side == "bottom":
+        return (mid_x, SCREEN_HEIGHT - margin)
+    return None
+
+
+def is_door_open_for_side(side, doors):
+    """해당 방향 문이 열린 상태인지 확인"""
+    door_id = SIDE_TO_DOOR_ID[side]
+    for door in doors:
+        if door["id"] == door_id:
+            return door.get("open", False)
+    return False
+
+
+def get_neighbor_position(map_file_path, side):
+    """현재 맵의 격자 좌표에서 방향별 이웃 좌표를 계산"""
+    base_x, base_y = MAP_POSITIONS.setdefault(map_file_path, (0, 0))
+    delta_x, delta_y = SIDE_DELTAS[side]
+    return (base_x + delta_x, base_y + delta_y)
+
+
+def register_map_at_position(map_file_path, position):
+    """맵 파일을 월드 격자 좌표에 등록"""
+    MAP_POSITIONS[map_file_path] = position
+    POSITION_TO_MAP[position] = map_file_path
+
+
+def ensure_map_has_position(map_file_path):
+    """좌표가 없는 맵에 디버그용 고유 좌표를 부여"""
+    if map_file_path in MAP_POSITIONS:
+        return MAP_POSITIONS[map_file_path]
+
+    candidate_x = 0
+    while (candidate_x, 0) in POSITION_TO_MAP:
+        candidate_x += 1
+    register_map_at_position(map_file_path, (candidate_x, 0))
+    return MAP_POSITIONS[map_file_path]
+
+
+def connect_maps(from_map_file, exit_side, to_map_file):
+    """양방향 맵 연결을 일관되게 기록"""
+    MAP_CONNECTIONS.setdefault(from_map_file, {})[exit_side] = to_map_file
+    reverse_side = OPPOSITE_SIDE[exit_side]
+    MAP_CONNECTIONS.setdefault(to_map_file, {})[reverse_side] = from_map_file
+
+    target_position = get_neighbor_position(from_map_file, exit_side)
+    register_map_at_position(to_map_file, target_position)
+
+
+def choose_connected_map(current_map_file, exit_side):
+    """현재 맵 + 출구 방향으로 연결될 맵을 좌표 일관성 있게 반환"""
+    edge_map = MAP_CONNECTIONS.setdefault(current_map_file, {})
+    if exit_side in edge_map:
+        return edge_map[exit_side], True
+
+    target_position = get_neighbor_position(current_map_file, exit_side)
+    mapped_target = POSITION_TO_MAP.get(target_position)
+    if mapped_target is not None:
+        connect_maps(current_map_file, exit_side, mapped_target)
+        return mapped_target, True
+
+    # 아직 방문하지 않은 normal 맵을 우선 연결
+    candidates = [
+        m for m in MAP_CYCLE_FILES
+        if m not in VISITED_MAPS and m != current_map_file and m not in MAP_POSITIONS
+    ]
+    if not candidates:
+        candidates = [m for m in MAP_CYCLE_FILES if m != current_map_file and m not in MAP_POSITIONS]
+    if not candidates:
+        candidates = [current_map_file]
+
+    target = random.choice(candidates)
+    connect_maps(current_map_file, exit_side, target)
+    return target, False
+
+
+def build_runtime_from_map(map_file_path, default_spawn, entry_side=None):
+    """맵 파일을 로드하고 런타임 상태를 반환"""
+    world_state = load_runtime_world_state(map_file_path, SCREEN_WIDTH, SCREEN_HEIGHT, default_spawn)
+    base_boxes = world_state["boxes"]
+    doors, room_rect = create_room_doors(SCREEN_WIDTH, SCREEN_HEIGHT)
+    spawn = world_state["spawn"]
+    if entry_side is not None:
+        edge_spawn = get_edge_spawn(entry_side)
+        if edge_spawn is not None:
+            spawn = edge_spawn
+    enemies_local = world_state["enemies"]
+    if map_file_path in CLEARED_MAPS:
+        enemies_local = {}
+    room_enemy_keys = collect_room_enemy_keys(enemies_local, room_rect)
+    boxes = compose_world_boxes(base_boxes, doors)
+    box_rects = build_box_rects(boxes)
+    visibility_segments = build_visibility_segments(boxes)
+
+    if map_file_path in CLEARED_MAPS:
+        for door in doors:
+            door["open"] = True
+        room_enemy_keys = set()
+        boxes = compose_world_boxes(base_boxes, doors)
+        box_rects = build_box_rects(boxes)
+        visibility_segments = build_visibility_segments(boxes)
+
+    spawn = find_valid_enemy_spawn(
+        spawn[0],
+        spawn[1],
+        PLAYER_RADIUS,
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT,
+        box_rects,
+    )
+
+    return {
+        "source": world_state["source"],
+        "base_boxes": base_boxes,
+        "doors": doors,
+        "room_rect": room_rect,
+        "spawn": spawn,
+        "enemies": enemies_local,
+        "room_enemy_keys": room_enemy_keys,
+        "boxes": boxes,
+        "box_rects": box_rects,
+        "visibility_segments": visibility_segments,
+    }
+
+
+def apply_runtime_state(runtime):
+    """런타임 월드 상태 딕셔너리를 현재 전역 상태에 반영"""
+    global BASE_BOXES, DOORS, ROOM_RECT, pos_x, pos_y, enemies, ROOM_ENEMY_KEYS, BOXES, BOX_RECTS, VISIBILITY_SEGMENTS
+
+    BASE_BOXES = runtime["base_boxes"]
+    DOORS = runtime["doors"]
+    ROOM_RECT = runtime["room_rect"]
+    pos_x, pos_y = runtime["spawn"]
+    enemies = runtime["enemies"]
+    ROOM_ENEMY_KEYS = runtime["room_enemy_keys"]
+    BOXES = runtime["boxes"]
+    BOX_RECTS = runtime["box_rects"]
+    VISIBILITY_SEGMENTS = runtime["visibility_segments"]
+
+
+def clear_current_map_state():
+    """현재 맵을 클리어 상태로 반영"""
+    enemies.clear()
+    ROOM_ENEMY_KEYS.clear()
+    CLEARED_MAPS.add(CURRENT_MAP_FILE)
+    for door in DOORS:
+        door["open"] = True
+
+    refreshed_boxes = compose_world_boxes(BASE_BOXES, DOORS)
+    refreshed_box_rects = build_box_rects(refreshed_boxes)
+    refreshed_visibility_segments = build_visibility_segments(refreshed_boxes)
+
+    return refreshed_boxes, refreshed_box_rects, refreshed_visibility_segments
 
 
 # ===== 객체 생성/위치 함수들 =====
@@ -409,25 +721,18 @@ initial_spawn = (
     objects.OBJECTS["player"].get("start_x", 0),
     objects.OBJECTS["player"].get("start_y", 0),
 )
-world_state = load_runtime_world_state(SCREEN_WIDTH, SCREEN_HEIGHT, initial_spawn)
-BASE_BOXES = world_state["boxes"]
-DOORS, ROOM_RECT = create_room_doors(SCREEN_WIDTH, SCREEN_HEIGHT)
-pos_x, pos_y = world_state["spawn"]
-enemies = world_state["enemies"]
-ROOM_ENEMY_KEYS = collect_room_enemy_keys(enemies, ROOM_RECT)
-
-# 문이 기본적으로 닫힌 상태이므로 월드 박스에 포함한다.
-BOXES = compose_world_boxes(BASE_BOXES, DOORS)
-BOX_RECTS = build_box_rects(BOXES)
-VISIBILITY_SEGMENTS = build_visibility_segments(BOXES)
-if world_state["source"] == "map":
+runtime = build_runtime_from_map(MAP_FILE, initial_spawn)
+apply_runtime_state(runtime)
+if runtime["source"] == "map":
     print(f"[Map Loaded] {MAP_FILE}")
+start_debug_window()
 
 # 총알 리스트
 bullets = []
 
 # 총기 상태
-gun_cfg = GUNS[CURRENT_GUN]
+current_gun_name = gun.CURRENT_GUN
+gun_cfg = GUNS[current_gun_name]
 ammo = gun_cfg["magazine_size"]        # 현재 탄약
 reload_timer = 0                       # 재장전 카운트다운 (0 = 완료)
 fire_timer = 0                         # 발사 딜레이 카운트다운
@@ -438,38 +743,6 @@ while True:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             sys.exit()
-        # ` 키: 모든 코드 재로드
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_BACKQUOTE:
-            import objects
-            import enemy
-            import screen
-            importlib.reload(objects)
-            importlib.reload(enemy)
-            importlib.reload(screen)
-            importlib.reload(gun)
-            from gun import GUNS, CURRENT_GUN, make_bullets
-            reload_spawn = (
-                objects.OBJECTS["player"].get("start_x", 200),
-                objects.OBJECTS["player"].get("start_y", 200),
-            )
-            world_state = load_runtime_world_state(SCREEN_WIDTH, SCREEN_HEIGHT, reload_spawn)
-            BASE_BOXES = world_state["boxes"]
-            DOORS, ROOM_RECT = create_room_doors(SCREEN_WIDTH, SCREEN_HEIGHT)
-            pos_x, pos_y = world_state["spawn"]
-            enemies = world_state["enemies"]
-            ROOM_ENEMY_KEYS = collect_room_enemy_keys(enemies, ROOM_RECT)
-            BOXES = compose_world_boxes(BASE_BOXES, DOORS)
-            BOX_RECTS = build_box_rects(BOXES)
-            VISIBILITY_SEGMENTS = build_visibility_segments(BOXES)
-            if world_state["source"] == "map":
-                print(f"[Reloaded + Map] {MAP_FILE}")
-            else:
-                print("[Reloaded] 기본 맵 설정이 다시 로드되었습니다")
-            bullets = []
-            gun_cfg = GUNS[CURRENT_GUN]
-            ammo = gun_cfg["magazine_size"]
-            reload_timer = 0
-            fire_timer = 0
 
         # R 키 외 별도: F 키로 수동 재장전
         if event.type == pygame.KEYDOWN and event.key == pygame.K_f:
@@ -485,11 +758,38 @@ while True:
                     dy = my - pos_y
                     dist = math.sqrt(dx * dx + dy * dy)
                     if dist > 0:
-                        bullets.extend(make_bullets(CURRENT_GUN, pos_x, pos_y, dx / dist, dy / dist))
+                        bullets.extend(make_bullets(current_gun_name, pos_x, pos_y, dx / dist, dy / dist))
                         ammo -= 1
                         fire_timer = gun_cfg["fire_rate"]
                         if ammo == 0:
                             reload_timer = gun_cfg["reload_time"]
+
+    while not DEBUG_COMMAND_QUEUE.empty():
+        command_name, payload = DEBUG_COMMAND_QUEUE.get()
+
+        if command_name == "kill_all":
+            BOXES, BOX_RECTS, VISIBILITY_SEGMENTS = clear_current_map_state()
+            print("[Debug] kill_all executed")
+        elif command_name == "teleport":
+            target_x, target_y = payload
+            pos_x, pos_y = find_valid_enemy_spawn(
+                target_x,
+                target_y,
+                PLAYER_RADIUS,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                BOX_RECTS,
+            )
+            print(f"[Debug] teleport -> ({int(pos_x)}, {int(pos_y)})")
+        elif command_name == "switch_gun" and payload in GUNS:
+            current_gun_name = payload
+            gun.CURRENT_GUN = current_gun_name
+            gun_cfg = GUNS[current_gun_name]
+            ammo = gun_cfg["magazine_size"]
+            reload_timer = 0
+            fire_timer = 0
+            bullets = []
+            print(f"[Debug] switch_gun -> {current_gun_name}")
 
     key_event = pygame.key.get_pressed()
 
@@ -501,7 +801,7 @@ while True:
             dy = my - pos_y
             dist = math.sqrt(dx * dx + dy * dy)
             if dist > 0:
-                bullets.extend(make_bullets(CURRENT_GUN, pos_x, pos_y, dx / dist, dy / dist))
+                bullets.extend(make_bullets(current_gun_name, pos_x, pos_y, dx / dist, dy / dist))
                 ammo -= 1
                 fire_timer = gun_cfg["fire_rate"]
                 if ammo == 0:
@@ -549,6 +849,42 @@ while True:
         pos_y = PLAYER_RADIUS
     if pos_y > SCREEN_HEIGHT - PLAYER_RADIUS:
         pos_y = SCREEN_HEIGHT - PLAYER_RADIUS
+
+    # 벽(화면 끝) 접촉 시 방향별 맵 연결 이동
+    transition_side = None
+    if move_x < 0 and pos_x <= PLAYER_RADIUS:
+        transition_side = "left"
+    elif move_x > 0 and pos_x >= SCREEN_WIDTH - PLAYER_RADIUS:
+        transition_side = "right"
+    elif move_y < 0 and pos_y <= PLAYER_RADIUS:
+        transition_side = "top"
+    elif move_y > 0 and pos_y >= SCREEN_HEIGHT - PLAYER_RADIUS:
+        transition_side = "bottom"
+
+    if transition_side and is_door_open_for_side(transition_side, DOORS):
+        target_map, was_existing = choose_connected_map(CURRENT_MAP_FILE, transition_side)
+        entry_side = OPPOSITE_SIDE[transition_side]
+        transition_spawn = (
+            objects.OBJECTS["player"].get("start_x", 200),
+            objects.OBJECTS["player"].get("start_y", 200),
+        )
+        runtime = build_runtime_from_map(target_map, transition_spawn, entry_side)
+
+        MAP_FILE = target_map
+        CURRENT_MAP_FILE = target_map
+        VISITED_MAPS.add(target_map)
+
+        apply_runtime_state(runtime)
+        bullets = []
+
+        if runtime["source"] == "map":
+            if was_existing:
+                print(f"[Map Move] existing link -> {MAP_FILE}")
+            else:
+                print(f"[Map Move] new link -> {MAP_FILE}")
+        else:
+            print(f"[Map Move Failed] {MAP_FILE} not found, fallback map loaded")
+        continue
 
     # 가시영역 계산
     visible_poly = get_visibility_polygon((pos_x, pos_y), VISIBILITY_SEGMENTS)
@@ -638,6 +974,7 @@ while True:
         if should_open_doors:
             for door in DOORS:
                 door["open"] = True
+            CLEARED_MAPS.add(CURRENT_MAP_FILE)
             ROOM_ENEMY_KEYS = set()
             BOXES = compose_world_boxes(BASE_BOXES, DOORS)
             BOX_RECTS = build_box_rects(BOXES)

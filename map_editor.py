@@ -34,7 +34,7 @@ TOOL_COLORS = {
     TOOL_SPAWN: (255, 220, 70),
 }
 
-ENEMY_TYPES = ["random_walker", "chaser", "sniper"]
+ENEMY_TYPES = ["sniper", "shotgun", "smg", "ar", "pistol"]
 
 
 def clamp(value, minimum, maximum):

@@ -7,7 +7,10 @@ import setting as st
 
 # 이미지 캐시 (성능 최적화)
 _image_cache = {}
+_scaled_image_cache = {}
 always_see = st.ALWAYS_SEE
+
+
 def load_image(image_path):
     """이미지를 로드하고 캐시 (중복 로드 방지)"""
     if image_path in _image_cache:
@@ -20,6 +23,21 @@ def load_image(image_path):
     except pygame.error:
         print(f"이미지 로드 실패: {image_path}")
         return None
+
+
+def get_scaled_image(image_path, width, height):
+    """같은 이미지/크기 조합은 한 번만 스케일링한다."""
+    cache_key = (image_path, width, height)
+    if cache_key in _scaled_image_cache:
+        return _scaled_image_cache[cache_key]
+
+    image = load_image(image_path)
+    if image is None:
+        return None
+
+    scaled_image = pygame.transform.scale(image, (width, height))
+    _scaled_image_cache[cache_key] = scaled_image
+    return scaled_image
 
 def render_game_screen(screen, visible_poly, BOXES, pos_x, pos_y, enemies, bullets, mouse_pos, font_small, SCREEN_WIDTH, SCREEN_HEIGHT, get_ray_screen_intersections, ammo=0, magazine_size=0, reload_timer=0, doors=None):
     """
@@ -61,11 +79,9 @@ def render_game_screen(screen, visible_poly, BOXES, pos_x, pos_y, enemies, bulle
         # 이미지 또는 색상 박스 그리기
         if box.get("image") and box["image"] != "None":
             # 이미지 사용
-            image = load_image(box["image"])
+            image = get_scaled_image(box["image"], box_rect.width, box_rect.height)
             if image:
-                # 이미지 크기를 박스 크기에 맞게 조정
-                scaled_image = pygame.transform.scale(image, (box_rect.width, box_rect.height))
-                screen.blit(scaled_image, box_rect)
+                screen.blit(image, box_rect)
             else:
                 # 이미지 로드 실패 시 색상 박스로 표시
                 pygame.draw.rect(screen, box["color"], box_rect)
@@ -80,7 +96,7 @@ def render_game_screen(screen, visible_poly, BOXES, pos_x, pos_y, enemies, bulle
     dir_x = mouse_pos[0] - pos_x
     dir_y = mouse_pos[1] - pos_y
     # 방향 벡터 정규화
-    length = math.sqrt(dir_x*dir_x + dir_y*dir_y)
+    length = math.hypot(dir_x, dir_y)
     if length > 0:
         dir_x /= length
         dir_y /= length

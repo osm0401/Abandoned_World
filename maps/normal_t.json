@@ -1,0 +1,177 @@
+﻿{
+    "meta":  {
+                 "name":  "normal_t",
+                 "created_at":  "2026-03-25T00:00:00",
+                 "width":  1000,
+                 "height":  960,
+                 "grid_size":  40,
+                 "theme":  "gauntlet_final",
+                 "difficulty":  7
+             },
+    "player_spawn":  {
+                         "x":  180,
+                         "y":  180
+                     },
+    "boxes":  [
+                  {
+                      "x":  180,
+                      "y":  160,
+                      "w":  640,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  180,
+                      "y":  760,
+                      "w":  640,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  180,
+                      "y":  280,
+                      "w":  40,
+                      "h":  440,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  780,
+                      "y":  280,
+                      "w":  40,
+                      "h":  440,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  320,
+                      "y":  320,
+                      "w":  120,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  560,
+                      "y":  320,
+                      "w":  120,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  320,
+                      "y":  600,
+                      "w":  120,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  560,
+                      "y":  600,
+                      "w":  120,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  }
+              ],
+    "doors":  [
+
+              ],
+    "enemies":  [
+                    {
+                        "type":  "sniper",
+                        "x":  820,
+                        "y":  120,
+                        "radius":  12,
+                        "speed":  1.8,
+                        "hp":  210
+                    },
+                    {
+                        "type":  "chaser",
+                        "x":  900,
+                        "y":  260,
+                        "radius":  12,
+                        "speed":  2.3,
+                        "hp":  200
+                    },
+                    {
+                        "type":  "random_walker",
+                        "x":  860,
+                        "y":  420,
+                        "radius":  12,
+                        "speed":  2.1,
+                        "hp":  190
+                    },
+                    {
+                        "type":  "sniper",
+                        "x":  900,
+                        "y":  600,
+                        "radius":  12,
+                        "speed":  1.8,
+                        "hp":  210
+                    },
+                    {
+                        "type":  "chaser",
+                        "x":  820,
+                        "y":  760,
+                        "radius":  12,
+                        "speed":  2.3,
+                        "hp":  200
+                    },
+                    {
+                        "type":  "random_walker",
+                        "x":  900,
+                        "y":  860,
+                        "radius":  12,
+                        "speed":  2.1,
+                        "hp":  190
+                    },
+                    {
+                        "type":  "chaser",
+                        "x":  700,
+                        "y":  540,
+                        "radius":  12,
+                        "speed":  2.3,
+                        "hp":  200
+                    }
+                ],
+    "props":  [
+
+              ]
+}

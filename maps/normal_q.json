@@ -1,0 +1,165 @@
+﻿{
+    "meta":  {
+                 "name":  "normal_q",
+                 "created_at":  "2026-03-25T00:00:00",
+                 "width":  1000,
+                 "height":  960,
+                 "grid_size":  40,
+                 "theme":  "sniper_corridors",
+                 "difficulty":  6
+             },
+    "player_spawn":  {
+                         "x":  120,
+                         "y":  120
+                     },
+    "boxes":  [
+                  {
+                      "x":  280,
+                      "y":  120,
+                      "w":  40,
+                      "h":  720,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  680,
+                      "y":  120,
+                      "w":  40,
+                      "h":  720,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  360,
+                      "y":  280,
+                      "w":  240,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  360,
+                      "y":  640,
+                      "w":  240,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  460,
+                      "y":  440,
+                      "w":  40,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  500,
+                      "y":  440,
+                      "w":  40,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  },
+                  {
+                      "x":  460,
+                      "y":  480,
+                      "w":  40,
+                      "h":  40,
+                      "color":  [
+                                    92,
+                                    143,
+                                    214
+                                ],
+                      "image":  null
+                  }
+              ],
+    "doors":  [
+
+              ],
+    "enemies":  [
+                    {
+                        "type":  "random_walker",
+                        "x":  820,
+                        "y":  120,
+                        "radius":  12,
+                        "speed":  2,
+                        "hp":  175
+                    },
+                    {
+                        "type":  "chaser",
+                        "x":  900,
+                        "y":  260,
+                        "radius":  12,
+                        "speed":  2,
+                        "hp":  185
+                    },
+                    {
+                        "type":  "random_walker",
+                        "x":  860,
+                        "y":  420,
+                        "radius":  12,
+                        "speed":  2,
+                        "hp":  175
+                    },
+                    {
+                        "type":  "sniper",
+                        "x":  900,
+                        "y":  600,
+                        "radius":  12,
+                        "speed":  1.8,
+                        "hp":  195
+                    },
+                    {
+                        "type":  "chaser",
+                        "x":  820,
+                        "y":  760,
+                        "radius":  12,
+                        "speed":  2,
+                        "hp":  185
+                    },
+                    {
+                        "type":  "random_walker",
+                        "x":  900,
+                        "y":  860,
+                        "radius":  12,
+                        "speed":  2,
+                        "hp":  175
+                    },
+                    {
+                        "type":  "sniper",
+                        "x":  700,
+                        "y":  540,
+                        "radius":  12,
+                        "speed":  1.8,
+                        "hp":  195
+                    }
+                ],
+    "props":  [
+
+              ]
+}

@@ -4,41 +4,46 @@
 import random
 import math
 
-# 적 오브젝트 정의
-# ENEMY 딕셔너리에 적을 추가하면 자동으로 게임에 적용됩니다
-# 각 적은 다음과 같은 속성을 가질 수 있습니다:
-# - name: 적의 이름 (고유 식별자)
-# - color: RGB 색상 튜플 (255, 255, 0) 또는 None
-# - image: 이미지 파일 경로 또는 None (색상 사용)
-# - type: 적 타입
-#   * "random_walker": 무작위로 돌아다니는 적
-#   * "chaser": 플레이어를 보면 추적하는 적 (마지막 본 위치로 이동)
-# - speed: 이동 속도 (숫자)
-# - radius: 적의 크기 (반지름)
 ENEMY = {
-    "yellow_dot": {
-        "name": "yellow_dot",     # 적 이름
-        "color": (255, 255, 0),  # 노란색
-        "image": None,           # 이미지 경로 또는 None
-        "type": "random_walker", # 무작위로 돌아다니는 적
-        "speed": 2,              # 이동 속도
-        "radius": 15,            # 반지름
+    "pistol": {
+        "name": "pistol",
+        "color": (255, 230, 80),
+        "image": None,
+        "type": "pistol",
+        "speed": 2.0,
+        "radius": 14,
     },
-    "red_chaser": {
-        "name": "red_chaser",    # 적 이름
-        "color": (255, 0, 0),    # 빨간색
-        "image": None,           # 이미지 경로 또는 None
-        "type": "chaser",        # 플레이어를 보면 추적하는 적
-        "speed": 1.8,            # 이동 속도
-        "radius": 12,            # 반지름 (작음)
+    "shotgun": {
+        "name": "shotgun",
+        "color": (255, 140, 0),
+        "image": None,
+        "type": "shotgun",
+        "speed": 1.8,
+        "radius": 16,
     },
-    "purple_chaser": {
-        "name": "purple_chaser", # 적 이름
-        "color": (128, 0, 128),  # 보라색
-        "image": None,           # 이미지 경로 또는 None
-        "type": "chaser",        # 플레이어를 보면 추적하는 적
-        "speed": 2.2,            # 빠른 추적자
-        "radius": 14,            # 반지름
+    "smg": {
+        "name": "smg",
+        "color": (180, 255, 180),
+        "image": None,
+        "type": "smg",
+        "speed": 2.4,
+        "radius": 13,
+    },
+    "ar": {
+        "name": "ar",
+        "color": (120, 255, 220),
+        "image": None,
+        "type": "ar",
+        "speed": 2.2,
+        "radius": 14,
+    },
+    "sniper": {
+        "name": "sniper",
+        "color": (120, 220, 255),
+        "image": None,
+        "type": "sniper",
+        "speed": 1.6,
+        "radius": 12,
     },
 }
 
@@ -97,7 +102,6 @@ def update_enemy_ai(enemies, pos_x, pos_y, visible_poly, BOXES, SCREEN_WIDTH, SC
 
     for enemy_key, enemy in enemies.items():
         enemy_data = enemy["data"]
-        enemy_type = enemy_data["type"]
         enemy_speed = enemy_data["speed"]
         enemy_radius = enemy_data["radius"]
         enemy_pos_x = enemy["pos_x"]
@@ -110,19 +114,14 @@ def update_enemy_ai(enemies, pos_x, pos_y, visible_poly, BOXES, SCREEN_WIDTH, SC
             can_see_player = point_in_polygon_func((enemy_pos_x, enemy_pos_y), visible_poly)
             if can_see_player:
                 enemy["last_seen_player"] = (pos_x, pos_y)
-                # 적 타입별 추적 시간 설정
-                if enemy_type == "chaser":
-                    enemy["chase_timer"] = 300  # 5초간 추적 유지
-                else:
-                    enemy["chase_timer"] = 120  # 다른 타입은 2초만 추적
+                enemy["chase_timer"] = 300
 
         # 추적 타이머 감소
         if enemy["chase_timer"] > 0:
             enemy["chase_timer"] -= 1
 
         # 이동 방향 결정
-        if enemy_type == "chaser" and enemy["last_seen_player"] and enemy["chase_timer"] > 0:
-            # 플레이어 추적
+        if enemy["last_seen_player"] and enemy["chase_timer"] > 0:
             target_x, target_y = enemy["last_seen_player"]
             dx = target_x - enemy_pos_x
             dy = target_y - enemy_pos_y
@@ -131,7 +130,6 @@ def update_enemy_ai(enemies, pos_x, pos_y, visible_poly, BOXES, SCREEN_WIDTH, SC
                 enemy_angle = math.atan2(dy, dx)
                 enemy["angle"] = enemy_angle
         else:
-            # 무작위 이동 (random_walker)
             enemy_angle += random.uniform(-0.1, 0.1)
             enemy["angle"] = enemy_angle
 
